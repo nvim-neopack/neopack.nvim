@@ -20,7 +20,7 @@ local default_opts = {
       opt = true,
     },
   },
-  path = vim.fn.stdpath("data") .. "/site/pack/neopacks/",
+  path = vim.fn.stdpath("data") .. "/site/pack/neopack/",
   verbose = false,
   log = {
     path = vim.fn.stdpath("log") .. "/neopack.log",
