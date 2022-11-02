@@ -266,8 +266,8 @@ end
 M.clean = function()
   exe_op("remove", remove, check_rm())
 end
-M.sync = function(self)
-  self:clean()
+M.sync = function()
+  M.clean()
   exe_op(
     "sync",
     clone_or_pull,
