@@ -14,22 +14,12 @@ local function parse_name(args)
   end
 end
 
-local function wrap_to_table(value)
-  if type(value) == "string" then
-    return { value }
-  elseif type(value) == "nil" then
-    return {}
-  else
-    return value
-  end
-end
-
 local function parse_package(opts)
   if type(opts) == "string" then
     opts = { opts }
   end
 
-  vim.tbl_deep_extend("force", config.options.packages.opts, opts)
+  opts = vim.tbl_deep_extend("force", config.options.packages.opts, opts)
 
   local name, src = parse_name(opts)
   if not name then
