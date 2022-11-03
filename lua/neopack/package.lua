@@ -1,5 +1,6 @@
 local log = require("neopack.log")
 local config = require("neopack.config")
+local loader = require("neopack.loader")
 
 local M = {}
 
@@ -69,6 +70,10 @@ M.use = function(opts)
       requirement.opt = pkg.opt
       M.use(requirement)
     end
+  end
+
+  if not pkg.opt then
+    loader.load_package(pkg)
   end
 end
 
