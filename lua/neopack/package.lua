@@ -28,6 +28,10 @@ local function parse_package(opts)
     return
   end
 
+  if type(opts.requires) == "string" then
+    opts.requires = { opts.requires }
+  end
+
   return vim.tbl_deep_extend("keep", opts, {
     name = name,
     status = "listed",
@@ -54,6 +58,17 @@ M.use = function(opts)
   pkg.basedir = config.options.path .. (pkg.opt and "opt/" or "start/")
   pkg.dir = config.options.path .. (pkg.opt and "opt/" or "start/") .. pkg.name
   pkg.exists = vim.fn.isdirectory(pkg.dir) ~= 0
+
+  if pkg.requires then
+    for _, requirement in ipairs(pkg.requires) do
+      if type(requirement) == "string" then
+        requirement = { requirement }
+      end
+
+      requirement.opt = pkg.opt
+      M.use(requirement)
+    end
+  end
 end
 
 return M
