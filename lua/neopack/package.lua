@@ -1,3 +1,4 @@
+local log = require("neopack.log")
 local config = require("neopack.config")
 
 local M = {}
@@ -23,7 +24,7 @@ local function parse_package(opts)
 
   local name, repo = parse_name(opts)
   if not name then
-    return vim.notify(" neopack: Failed to parse " .. repo, vim.log.levels.ERROR)
+    return log.error("Failed to parse", repo)
   elseif M.packages[name] then
     return
   end

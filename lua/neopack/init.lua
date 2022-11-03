@@ -48,10 +48,8 @@ local function new_counter()
         report(over_op or op, name, res, c.ok + c.nop, total)
       end
     end
-    local summary = (
-      " neopack: %s complete. %d ok; %d errors;" .. (c.nop > 0 and " %d no-ops" or "")
-    )
-    vim.notify(summary:format(op, c.ok, c.err, c.nop))
+    local summary = "%s complete. %d ok; %d errors;" .. (c.nop > 0 and " %d no-ops" or "")
+    log.info(summary:format(op, c.ok, c.err, c.nop))
     vim.cmd("packloadall! | silent! helptags ALL")
     vim.cmd("doautocmd User neopackDone" .. op:gsub("^%l", string.upper))
     return true
@@ -79,7 +77,7 @@ local function call_proc(process, args, cwd, cb, print_stdout)
     end)
   )
   if not handle then
-    vim.notify(string.format(" neopack: Failed to spawn %s (%s)", process, pid))
+    log.error("Failed to spawn", process, pid)
   end
 end
 
