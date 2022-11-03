@@ -3,25 +3,35 @@ local keymap = require("neopack.keymap")
 
 local M = {}
 
+local function make_optional(pkg)
+  if pkg.opt ~= false then
+    pkg.opt = true
+  end
+end
+
 local default_opts = {
   packages = {
     handlers = {
       event = function(pkg)
+        make_optional(pkg)
         loader.load_by_event(pkg, pkg.event)
       end,
       ft = function(pkg)
+        make_optional(pkg)
         loader.load_by_ft(pkg, pkg.ft)
       end,
       keymap = function(pkg)
+        make_optional(pkg)
         pkg.keymap(keymap:new({ pkg = pkg }))
       end,
     },
     opts = {
-      opt = true,
+      protocol = "https",
+      host = "github",
     },
   },
   path = vim.fn.stdpath("data") .. "/site/pack/neopack/",
-  verbose = false,
+  verbose = true,
   log = {
     path = vim.fn.stdpath("log") .. "/neopack.log",
   },

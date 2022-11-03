@@ -1,5 +1,7 @@
 local config = require("neopack.config")
 local package = require("neopack.package")
+local log = require("neopack.log")
+local git = require("neopack.git")
 
 local M = {}
 
@@ -27,7 +29,13 @@ table.insert(env, "GIT_TERMINAL_PROMPT=0")
 
 local function report(op, name, res, n, total)
   local count = n and (" [%d/%d]"):format(n, total) or ""
-  vim.notify((" neopack:%s %s %s"):format(count, messages[op][res], name), res == "err" and vim.log.levels.ERROR)
+  local msg = string.format("%s %s %s", count, messages[op][res], name)
+
+  if res == "err" then
+    log.error(msg)
+  else
+    log.info(msg)
+  end
 end
 
 local function new_counter()
@@ -40,7 +48,9 @@ local function new_counter()
         report(over_op or op, name, res, c.ok + c.nop, total)
       end
     end
-    local summary = (" neopack: %s complete. %d ok; %d errors;" .. (c.nop > 0 and " %d no-ops" or ""))
+    local summary = (
+      " neopack: %s complete. %d ok; %d errors;" .. (c.nop > 0 and " %d no-ops" or "")
+    )
     vim.notify(summary:format(op, c.ok, c.err, c.nop))
     vim.cmd("packloadall! | silent! helptags ALL")
     vim.cmd("doautocmd User neopackDone" .. op:gsub("^%l", string.upper))
@@ -49,15 +59,20 @@ local function new_counter()
 end
 
 local function call_proc(process, args, cwd, cb, print_stdout)
-  local log = uv.fs_open(log_path, "a+", 0x1A4)
+  local log_file = uv.fs_open(log_path, "a+", 0x1A4)
   local stderr = uv.new_pipe(false)
-  stderr:open(log)
+  stderr:open(log_file)
   local handle, pid
   handle, pid = uv.spawn(
     process,
-    { args = args, cwd = cwd, stdio = { nil, print_stdout and stderr, stderr }, env = env },
+    {
+      args = args,
+      cwd = cwd,
+      stdio = { nil, print_stdout and stderr, stderr },
+      env = env,
+    },
     vim.schedule_wrap(function(code)
-      uv.fs_close(log)
+      uv.fs_close(log_file)
       stderr:close()
       handle:close()
       cb(code == 0)
@@ -68,18 +83,12 @@ local function call_proc(process, args, cwd, cb, print_stdout)
   end
 end
 
-local function log(message)
-  local log = uv.fs_open(log_path, "a+", 0x1A4)
-  uv.fs_write(log, message .. "\n")
-  uv.fs_close(log)
-end
-
 local function run_hook(pkg, counter, sync)
   local t = type(pkg.run)
   if t == "function" then
-    vim.cmd("packadd " .. pkg.name)
+    vim.cmd.packadd(pkg.name)
     local res = pcall(pkg.run) and "ok" or "err"
-    report("hook", pkg.name, res)
+    log.info("Ran hook for", pkg.name)
     return counter and counter(pkg.name, res, sync)
   elseif t == "string" then
     local args = {}
@@ -88,7 +97,7 @@ local function run_hook(pkg, counter, sync)
     end
     call_proc(table.remove(args, 1), args, pkg.dir, function(ok)
       local res = ok and "ok" or "err"
-      report("hook", pkg.name, res)
+      log.info("Ran hook for", pkg.name)
       return counter and counter(pkg.name, res, sync)
     end)
     return true
@@ -96,58 +105,39 @@ local function run_hook(pkg, counter, sync)
 end
 
 local function clone(pkg, counter, sync)
-  local args = { "clone", pkg.url, "--depth=1", "--recurse-submodules", "--shallow-submodules" }
-  if pkg.branch then
-    vim.list_extend(args, { "-b", pkg.branch })
-  end
-  vim.list_extend(args, { pkg.dir })
-  call_proc("git", args, nil, function(ok)
-    if ok then
-      pkg.exists = true
-      pkg.status = "installed"
-      return pkg.run and run_hook(pkg, counter, sync) or counter(pkg.name, "ok", sync)
-    else
-      counter(pkg.name, "err", sync)
-    end
-  end)
-end
-
-local function get_git_hash(dir)
-  local first_line = function(path)
-    local file = io.open(path)
-    if file then
-      local line = file:read()
-      file:close()
-      return line
-    end
-  end
-  local head_ref = first_line(dir .. "/.git/HEAD")
-  return head_ref and first_line(dir .. "/.git/" .. head_ref:gsub("ref: ", ""))
+  git.clone(pkg, {
+    on_exit = function(code)
+      if code == 0 then
+        pkg.exists = true
+        pkg.status = "installed"
+        return pkg.run and run_hook(pkg, counter, sync) or counter(pkg.name, "ok", sync)
+      else
+        counter(pkg.name, "err", sync)
+      end
+    end,
+  })
 end
 
 local function pull(pkg, counter, sync)
-  local prev_hash = get_git_hash(pkg.dir)
-  call_proc("git", { "pull", "--recurse-submodules", "--update-shallow" }, pkg.dir, function(ok)
-    if not ok then
-      counter(pkg.name, "err", sync)
-    else
-      local cur_hash = get_git_hash(pkg.dir)
+  local prev_hash = git.get_hash(pkg)
+
+  git.pull(pkg, {
+    on_exit = function(code)
+      if code ~= 0 then
+        counter(pkg.name, "err", sync)
+        return
+      end
+
+      local cur_hash = git.get_hash(pkg)
       if cur_hash ~= prev_hash then
-        log(pkg.name .. " updating...")
-        call_proc(
-          "git",
-          { "log", "--pretty=format:* %s", prev_hash .. ".." .. cur_hash },
-          pkg.dir,
-          function(ok) end,
-          true
-        )
+        log.info(pkg.name .. " updating...")
         pkg.status = "updated"
         return pkg.run and run_hook(pkg, counter, sync) or counter(pkg.name, "ok", sync)
       else
         counter(pkg.name, "nop", sync)
       end
-    end
-  end)
+    end,
+  })
 end
 
 local function clone_or_pull(pkg, counter)
@@ -197,18 +187,18 @@ local function rmdir(dir, name, t)
   end
 end
 
-local function remove(p, counter)
-  local ok = walk_dir(p.dir, rmdir) and uv.fs_rmdir(p.dir)
-  counter(p.name, ok and "ok" or "err")
+local function remove(pkg, counter)
+  local ok = walk_dir(pkg.dir, rmdir) and uv.fs_rmdir(pkg.dir)
+  counter(pkg.name, ok and "ok" or "err")
 
   if ok then
-    packages[p.name] = { name = p.name, status = "removed" }
+    packages[pkg.name] = { name = pkg.name, status = "removed" }
   end
 end
 
 local function exe_op(op, fn, pkgs)
   if #pkgs == 0 then
-    vim.notify(" neopack: Nothing to " .. op)
+    log.info("Nothing to " .. op)
     vim.cmd("doautocmd User neopackDone" .. op:gsub("^%l", string.upper))
     return
   end
@@ -235,7 +225,10 @@ local function list()
   end)
 
   local sym_tbl = { installed = "+", updated = "*", removed = " " }
-  for header, pkgs in pairs({ ["Installed packages:"] = installed, ["Recently removed:"] = removed }) do
+  for header, pkgs in pairs({
+    ["Installed packages:"] = installed,
+    ["Recently removed:"] = removed,
+  }) do
     if #pkgs ~= 0 then
       print(header)
       for _, pkg in ipairs(pkgs) do
@@ -289,7 +282,7 @@ M.log_open = function()
   vim.cmd("sp " .. log_path)
 end
 M.log_clean = function()
-  return assert(uv.fs_unlink(log_path)) and vim.notify(" neopack: log file deleted")
+  return assert(uv.fs_unlink(log_path)) and log.info("log file deleted")
 end
 M.use = package.use
 

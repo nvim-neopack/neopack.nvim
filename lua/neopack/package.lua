@@ -21,20 +21,17 @@ local function parse_package(opts)
 
   opts = vim.tbl_deep_extend("force", config.options.packages.opts, opts)
 
-  local name, src = parse_name(opts)
+  local name, repo = parse_name(opts)
   if not name then
-    return vim.notify(" neopack: Failed to parse " .. src, vim.log.levels.ERROR)
+    return vim.notify(" neopack: Failed to parse " .. repo, vim.log.levels.ERROR)
   elseif M.packages[name] then
     return
   end
 
-  local dir = config.options.path .. (opts.opt and "opt/" or "start/") .. name
-
   return vim.tbl_deep_extend("keep", opts, {
     name = name,
-    dir = dir,
-    exists = vim.fn.isdirectory(dir) ~= 0,
     status = "listed",
+    repo = repo,
     url = opts.url or "https://github.com/" .. opts[1] .. ".git",
   })
 end
@@ -53,6 +50,10 @@ M.use = function(opts)
       handler(pkg)
     end
   end
+
+  pkg.basedir = config.options.path .. (pkg.opt and "opt/" or "start/")
+  pkg.dir = config.options.path .. (pkg.opt and "opt/" or "start/") .. pkg.name
+  pkg.exists = vim.fn.isdirectory(pkg.dir) ~= 0
 end
 
 return M
